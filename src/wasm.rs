@@ -1,7 +1,13 @@
-use std::collections::HashMap;
-use std::fmt;
-use std::ops::Deref;
-
+use crate::addresses::SimpleAddressGenerator;
+use crate::app::{CosmosRouter, RouterQuerier};
+use crate::checksums::{ChecksumGenerator, SimpleChecksumGenerator};
+use crate::contracts::Contract;
+use crate::error::{bail, AnyContext, AnyError, AnyResult, Error};
+use crate::executor::AppResponse;
+use crate::prefixed_storage::{prefixed, prefixed_read, PrefixedStorage, ReadonlyPrefixedStorage};
+use crate::transactions::transactional;
+use crate::AddressGenerator;
+use cosmwasm_std::testing::mock_wasmd_attr;
 use cosmwasm_std::{
     to_binary, Addr, Api, Attribute, BankMsg, Binary, BlockInfo, Coin, ContractInfo,
     ContractInfoResponse, CustomQuery, Deps, DepsMut, Env, Event, MessageInfo, Order, Querier,
@@ -103,27 +109,6 @@ pub struct WasmKeeper<ExecC, QueryC> {
     /// Just markers to make type elision fork when using it as `Wasm` trait
     _p: std::marker::PhantomData<QueryC>,
     generator: Box<dyn AddressGenerator>,
-}
-
-pub trait AddressGenerator {
-    fn next_address(&self, storage: &mut dyn Storage) -> Addr;
-}
-
-#[derive(Debug)]
-struct SimpleAddressGenerator();
-
-impl AddressGenerator for SimpleAddressGenerator {
-    fn next_address(&self, storage: &mut dyn Storage) -> Addr {
-        let count = CONTRACTS
-            .range_raw(
-                &prefixed_read(storage, NAMESPACE_WASM),
-                None,
-                None,
-                Order::Ascending,
-            )
-            .count();
-        Addr::unchecked(format!("contract{}", count))
-    }
 }
 
 impl<ExecC, QueryC> Default for WasmKeeper<ExecC, QueryC> {
@@ -547,6 +532,77 @@ where
         }
     }
 
+    /// Processes WasmMsg::Instantiate and WasmMsg::Instantiate2 messages.
+    fn process_wasm_msg_instantiate(
+        &self,
+        api: &dyn Api,
+        storage: &mut dyn Storage,
+        router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        block: &BlockInfo,
+        sender: Addr,
+        admin: Option<String>,
+        code_id: u64,
+        msg: Binary,
+        funds: Vec<Coin>,
+        label: String,
+        salt: Option<Binary>,
+    ) -> AnyResult<AppResponse> {
+        if label.is_empty() {
+            bail!("Label is required on all contracts");
+        }
+
+        let contract_addr = self.register_contract(
+            api,
+            storage,
+            code_id,
+            sender.clone(),
+            admin.map(Addr::unchecked),
+            label,
+            block.height,
+            salt,
+        )?;
+
+        // move the cash
+        self.send(
+            api,
+            storage,
+            router,
+            block,
+            sender.clone(),
+            contract_addr.clone().into(),
+            &funds,
+        )?;
+
+        // then call the contract
+        let info = MessageInfo { sender, funds };
+        let res = self.call_instantiate(
+            contract_addr.clone(),
+            api,
+            storage,
+            router,
+            block,
+            info,
+            msg.to_vec(),
+        )?;
+
+        let custom_event = Event::new("instantiate")
+            .add_attribute(CONTRACT_ATTR, &contract_addr)
+            .add_attribute("code_id", code_id.to_string());
+
+        let (res, msgs) = self.build_app_response(&contract_addr, custom_event, res);
+        let mut res = self.process_response(
+            api,
+            router,
+            storage,
+            block,
+            contract_addr.clone(),
+            res,
+            msgs,
+        )?;
+        res.data = Some(instantiate_response(res.data, &contract_addr));
+        Ok(res)
+    }
+
     /// This will execute the given messages, making all changes to the local cache.
     /// This *will* write some data to the cache if the message fails half-way through.
     /// All sequential calls to RouterCache will be one atomic unit (all commit or all fail).
@@ -710,20 +766,43 @@ where
     /// These two steps are separated to have cleaner return values.
     pub fn register_contract(
         &self,
+        api: &dyn Api,
         storage: &mut dyn Storage,
         code_id: usize,
         creator: Addr,
         admin: impl Into<Option<Addr>>,
         label: String,
         created: u64,
+        salt: impl Into<Option<Binary>>,
     ) -> AnyResult<Addr> {
-        // check if contract code with code_id exists
+        // check if contract's code with code_id exists
         if code_id as usize > self.code_data.len() {
             bail!("Cannot init contract with unregistered code id");
         }
 
-        let addr = self.generator.next_address(storage);
+        // generate a new contract address
+        let instance_id = self.instance_count(storage) as u64;
+        let addr = if let Some(salt_binary) = salt.into() {
+            // generate predictable contract address when salt is provided
+            let code_data = self.code_data(code_id)?;
+            let canonical_addr = &api.addr_canonicalize(creator.as_ref())?;
+            self.generator.predictable_contract_address(
+                api,
+                code_id,
+                instance_id,
+                code_data.checksum.as_slice(),
+                canonical_addr,
+                salt_binary.as_slice(),
+            )?
+        } else {
+            // generate classic, unpredictable contract address
+            self.generator
+                .classic_contract_address(api, code_id, instance_id)
+        };
 
+        //TODO Check here if contract address already exists, return error if this is the case.
+
+        // prepare contract data and save new contract instance
         let info = ContractData {
             code_id,
             creator,
@@ -917,6 +996,18 @@ where
             .save(&mut prefixed(storage, NAMESPACE_WASM), address, contract)
             .map_err(Into::into)
     }
+
+    /// Returns the number of all contract instances.
+    fn instance_count(&self, storage: &dyn Storage) -> usize {
+        CONTRACTS
+            .range_raw(
+                &prefixed_read(storage, NAMESPACE_WASM),
+                None,
+                None,
+                Order::Ascending,
+            )
+            .count()
+    }
 }
 
 // TODO: replace with code in utils
@@ -963,8 +1054,8 @@ fn execute_response(data: Option<Binary>) -> Option<Binary> {
 mod test {
     use cosmwasm_std::testing::{mock_env, mock_info, MockApi, MockQuerier, MockStorage};
     use cosmwasm_std::{
-        coin, from_slice, to_vec, BankMsg, Coin, CosmosMsg, Empty, GovMsg, IbcMsg, IbcQuery,
-        StdError,
+        coin, from_slice, to_vec, BankMsg, CanonicalAddr, Coin, CosmosMsg, Empty, GovMsg,
+        HexBinary, IbcMsg, IbcQuery, StdError,
     };
 
     use crate::app::Router;
@@ -1013,26 +1104,30 @@ mod test {
 
         transactional(&mut wasm_storage, |cache, _| {
             // cannot register contract with unregistered codeId
-            keeper.register_contract(
+            wasm_keeper.register_contract(
+                &api,
                 cache,
                 code_id + 1,
                 Addr::unchecked("foobar"),
                 Addr::unchecked("admin"),
                 "label".to_owned(),
                 1000,
+                None,
             )
         })
         .unwrap_err();
 
         let contract_addr = transactional(&mut wasm_storage, |cache, _| {
             // we can register a new instance of this code
-            keeper.register_contract(
+            wasm_keeper.register_contract(
+                &api,
                 cache,
                 code_id,
                 Addr::unchecked("foobar"),
                 Addr::unchecked("admin"),
                 "label".to_owned(),
                 1000,
+                None,
             )
         })
         .unwrap();
@@ -1105,12 +1200,14 @@ mod test {
 
         let contract_addr = keeper
             .register_contract(
+                &api,
                 &mut wasm_storage,
                 code_id,
                 Addr::unchecked("foobar"),
                 Addr::unchecked("admin"),
                 "label".to_owned(),
                 1000,
+                None,
             )
             .unwrap();
 
@@ -1140,12 +1237,14 @@ mod test {
 
         let contract_addr = keeper
             .register_contract(
+                &api,
                 &mut wasm_storage,
                 code_id,
                 Addr::unchecked("foobar"),
                 Addr::unchecked("admin"),
                 "label".to_owned(),
                 1000,
+                None,
             )
             .unwrap();
 
@@ -1192,12 +1291,14 @@ mod test {
 
         let contract_addr = keeper
             .register_contract(
+                &api,
                 &mut cache,
                 code_id,
                 Addr::unchecked("foobar"),
                 None,
                 "label".to_owned(),
                 1000,
+                None,
             )
             .unwrap();
 
@@ -1306,12 +1407,14 @@ mod test {
         let contract1 = transactional(&mut wasm_storage, |cache, _| {
             let contract = keeper
                 .register_contract(
+                    &api,
                     cache,
                     code_id,
                     Addr::unchecked("foobar"),
                     None,
                     "".to_string(),
                     1000,
+                    None,
                 )
                 .unwrap();
             let info = mock_info("foobar", &[]);
@@ -1345,12 +1448,14 @@ mod test {
             // create contract 2 and use it
             let contract2 = keeper
                 .register_contract(
+                    &api,
                     cache,
                     code_id,
                     Addr::unchecked("foobar"),
                     None,
                     "".to_owned(),
                     1000,
+                    None,
                 )
                 .unwrap();
             let info = mock_info("foobar", &[]);
@@ -1379,12 +1484,14 @@ mod test {
                 // create a contract on level 2
                 let contract3 = keeper
                     .register_contract(
+                        &api,
                         cache2,
                         code_id,
                         Addr::unchecked("foobar"),
                         None,
                         "".to_owned(),
                         1000,
+                        None,
                     )
                     .unwrap();
                 let info = mock_info("johnny", &[]);
@@ -1470,12 +1577,14 @@ mod test {
 
         let contract_addr = keeper
             .register_contract(
+                &api,
                 &mut wasm_storage,
                 code_id,
                 Addr::unchecked("creator"),
                 admin.clone(),
                 "label".to_owned(),
                 1000,
+                None,
             )
             .unwrap();
 
@@ -1559,44 +1668,86 @@ mod test {
     }
 
     #[test]
-    fn by_default_uses_simple_address_generator() {
-        let mut keeper = WasmKeeper::<Empty, Empty>::new();
-        let code_id = keeper.store_code(payout::contract());
+    fn uses_simple_address_generator_by_default() {
+        let api = MockApi::default();
+        let mut wasm_keeper = wasm_keeper();
+        let code_id = wasm_keeper.store_code(Addr::unchecked("creator"), payout::contract());
 
         let mut wasm_storage = MockStorage::new();
 
         let contract_addr = keeper
             .register_contract(
+                &api,
                 &mut wasm_storage,
                 code_id,
                 Addr::unchecked("foobar"),
                 Addr::unchecked("admin"),
                 "label".to_owned(),
                 1000,
+                None,
             )
             .unwrap();
 
         assert_eq!(
-            "contract0", contract_addr,
-            "default address generator returned incorrect address"
-        )
+            contract_addr, "contract0",
+            "default address generator returned incorrect classic contract address"
+        );
+
+        let contract_addr = wasm_keeper
+            .register_contract(
+                &api,
+                &mut wasm_storage,
+                code_id,
+                Addr::unchecked("foobar"),
+                Addr::unchecked("admin"),
+                "label".to_owned(),
+                1000,
+                Binary::from(HexBinary::from_hex("FA886B3C").unwrap()),
+            )
+            .unwrap();
+
+        assert_eq!(
+            contract_addr, "contract1",
+            "default address generator returned incorrect predictable contract address"
+        );
     }
 
     struct TestAddressGenerator {
-        addr_to_return: Addr,
+        classic_address: Addr,
+        predictable_address: Addr,
     }
     impl AddressGenerator for TestAddressGenerator {
-        fn next_address(&self, _: &mut dyn Storage) -> Addr {
-            self.addr_to_return.clone()
+        fn classic_contract_address(
+            &self,
+            _api: &dyn Api,
+            _code_id: u64,
+            _instance_id: u64,
+        ) -> Addr {
+            self.classic_address.clone()
+        }
+
+        fn predictable_contract_address(
+            &self,
+            _api: &dyn Api,
+            _code_id: u64,
+            _instance_id: u64,
+            _checksum: &[u8],
+            _creator: &CanonicalAddr,
+            _salt: &[u8],
+        ) -> AnyResult<Addr> {
+            Ok(self.predictable_address.clone())
         }
     }
 
     #[test]
     fn can_use_custom_address_generator() {
-        let expected_addr = Addr::unchecked("new_test_addr");
-        let mut keeper =
-            WasmKeeper::<Empty, Empty>::new_with_custom_address_generator(TestAddressGenerator {
-                addr_to_return: expected_addr.clone(),
+        let api = MockApi::default();
+        let expected_classic_addr = Addr::unchecked("classic_address");
+        let expected_predictable_addr = Addr::unchecked("predictable_address");
+        let mut wasm_keeper: WasmKeeper<Empty, Empty> =
+            WasmKeeper::new_with_custom_address_generator(TestAddressGenerator {
+                classic_address: expected_classic_addr.clone(),
+                predictable_address: expected_predictable_addr.clone(),
             });
         let code_id = keeper.store_code(payout::contract());
 
@@ -1604,18 +1755,38 @@ mod test {
 
         let contract_addr = keeper
             .register_contract(
+                &api,
                 &mut wasm_storage,
                 code_id,
                 Addr::unchecked("foobar"),
                 Addr::unchecked("admin"),
                 "label".to_owned(),
                 1000,
+                None,
             )
             .unwrap();
 
         assert_eq!(
-            expected_addr, contract_addr,
-            "custom address generator returned incorrect address"
-        )
+            contract_addr, expected_classic_addr,
+            "custom address generator returned incorrect classic contract address"
+        );
+
+        let contract_addr = wasm_keeper
+            .register_contract(
+                &api,
+                &mut wasm_storage,
+                code_id,
+                Addr::unchecked("foobar"),
+                Addr::unchecked("admin"),
+                "label".to_owned(),
+                1000,
+                Binary::from(HexBinary::from_hex("23A74B8C").unwrap()),
+            )
+            .unwrap();
+
+        assert_eq!(
+            contract_addr, expected_predictable_addr,
+            "custom address generator returned incorrect predictable contract address"
+        );
     }
 }

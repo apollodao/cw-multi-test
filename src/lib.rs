@@ -6,6 +6,7 @@
 //!
 //! To understand the design of this module, please refer to `../DESIGN.md`
 
+mod addresses;
 mod app;
 mod bank;
 #[allow(clippy::type_complexity)]
@@ -44,3 +45,4 @@ pub const QUERY_WASM_CONTRACT_SMART_PATH: &str = "/cosmwasm.wasm.v1.Query/SmartC
 pub const QUERY_WASM_CONTRACT_RAW_PATH: &str = "/cosmwasm.wasm.v1.Query/RawContractState";
 pub const QUERY_WASM_CONTRACT_INFO_PATH: &str = "/cosmwasm.wasm.v1.Query/ContractInfo";
 pub const QUERY_WASM_CODE_INFO_PATH: &str = "/cosmwasm.wasm.v1.Query/CodeInfo";
+
