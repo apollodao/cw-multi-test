@@ -792,7 +792,7 @@ where
         } else {
             // generate classic, unpredictable contract address
             self.generator
-                .classic_contract_address(api, storage, code_id, instance_id)
+                .classic_contract_address(api, storage, code_id, instance_id)?
         };
 
         // contract with the same address must not already exist
@@ -1722,8 +1722,8 @@ mod test {
             _storage: &mut dyn Storage,
             _code_id: u64,
             _instance_id: u64,
-        ) -> Addr {
-            self.classic_address.clone()
+        ) -> AnyResult<Addr> {
+            Ok(self.classic_address.clone())
         }
 
         fn predictable_contract_address(
