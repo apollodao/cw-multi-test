@@ -1774,7 +1774,7 @@ mod test {
 
         assert_eq!(
             contract_addr, expected_classic_addr,
-            "custom address generator returned incorrect classic contract address"
+            "custom address generator returned incorrect address"
         );
 
         let contract_addr = wasm_keeper
@@ -1792,7 +1792,7 @@ mod test {
 
         assert_eq!(
             contract_addr, expected_predictable_addr,
-            "custom address generator returned incorrect predictable contract address"
+            "custom address generator returned incorrect address"
         );
     }
 }
