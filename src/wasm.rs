@@ -276,13 +276,34 @@ where
         Self::default()
     }
 
-    pub fn new_with_custom_address_generator(generator: impl AddressGenerator + 'static) -> Self {
-        let default = Self::default();
+    #[deprecated(
+        since = "0.18.0",
+        note = "use `WasmKeeper::new().with_address_generator` instead; will be removed in version 1.0.0"
+    )]
+    pub fn new_with_custom_address_generator(
+        address_generator: impl AddressGenerator + 'static,
+    ) -> Self {
         Self {
             codes: default.codes,
             _p: default._p,
             generator: Box::new(generator),
         }
+    }
+
+    pub fn with_address_generator(
+        mut self,
+        address_generator: impl AddressGenerator + 'static,
+    ) -> Self {
+        self.address_generator = Box::new(address_generator);
+        self
+    }
+
+    pub fn with_checksum_generator(
+        mut self,
+        checksum_generator: impl ChecksumGenerator + 'static,
+    ) -> Self {
+        self.checksum_generator = Box::new(checksum_generator);
+        self
     }
 
     pub fn query_smart(
@@ -1742,7 +1763,7 @@ mod test {
         let expected_addr = Addr::unchecked("address");
         let expected_predictable_addr = Addr::unchecked("predictable_address");
         let mut wasm_keeper: WasmKeeper<Empty, Empty> =
-            WasmKeeper::new_with_custom_address_generator(TestAddressGenerator {
+            WasmKeeper::new().with_address_generator(TestAddressGenerator {
                 address: expected_addr.clone(),
                 predictable_address: expected_predictable_addr.clone(),
             });
