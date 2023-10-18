@@ -18,23 +18,14 @@ use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use cw_storage_plus::Map;
+//TODO Make `CONTRACTS` private in version 1.0 when the function AddressGenerator::next_address will be removed.
+/// Contract state kept in storage, separate from the contracts themselves (contract code).
+pub(crate) const CONTRACTS: Map<&Addr, ContractData> = Map::new("contracts");
 
-use crate::app::{CosmosRouter, RouterQuerier};
-use crate::contracts::Contract;
-use crate::error::Error;
-use crate::executor::AppResponse;
-use crate::prefixed_storage::{prefixed, prefixed_read, PrefixedStorage, ReadonlyPrefixedStorage};
-use crate::transactions::transactional;
-use cosmwasm_std::testing::mock_wasmd_attr;
-
-use anyhow::{bail, Context, Result as AnyResult};
-
-// Contract state is kept in Storage, separate from the contracts themselves
-const CONTRACTS: Map<&Addr, ContractData> = Map::new("contracts");
-
-pub const NAMESPACE_WASM: &[u8] = b"wasm";
-const CONTRACT_ATTR: &str = "_contract_addr";
+//TODO Make `NAMESPACE_WASM` private in version 1.0 when the function AddressGenerator::next_address will be removed.
+pub(crate) const NAMESPACE_WASM: &[u8] = b"wasm";
+/// See <https://github.com/chipshort/wasmd/blob/d0e3ed19f041e65f112d8e800416b3230d0005a2/x/wasm/types/events.go#L58>
+const CONTRACT_ATTR: &str = "_contract_address";
 
 #[derive(Clone, std::fmt::Debug, PartialEq, Eq, JsonSchema)]
 pub struct WasmSudo {
