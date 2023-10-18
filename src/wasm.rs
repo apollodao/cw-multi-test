@@ -241,17 +241,21 @@ impl<ExecC, QueryC> WasmKeeper<ExecC, QueryC> {
     fn verify_attributes(attributes: &[Attribute]) -> AnyResult<()> {
         for attr in attributes {
             let key = attr.key.trim();
-            let value = attr.value.trim();
+            let val = attr.value.trim();
+
             if key.is_empty() {
-                bail!(Error::empty_attribute_key(value));
+                bail!(Error::empty_attribute_key(val));
             }
-            if value.is_empty() {
+
+            if val.is_empty() {
                 bail!(Error::empty_attribute_value(key));
             }
+
             if key.starts_with('_') {
                 bail!(Error::reserved_attribute_key(key));
             }
         }
+
         Ok(())
     }
 
@@ -260,6 +264,7 @@ impl<ExecC, QueryC> WasmKeeper<ExecC, QueryC> {
         T: Clone + fmt::Debug + PartialEq + JsonSchema,
     {
         Self::verify_attributes(&response.attributes)?;
+
         for event in &response.events {
             Self::verify_attributes(&event.attributes)?;
             let ty = event.ty.trim();
@@ -267,6 +272,7 @@ impl<ExecC, QueryC> WasmKeeper<ExecC, QueryC> {
                 bail!(Error::event_type_too_short(ty));
             }
         }
+
         Ok(response)
     }
 }
