@@ -7,7 +7,7 @@ use anyhow::bail;
 use anyhow::Result as AnyResult;
 use cosmwasm_std::testing::{mock_env, MockApi, MockStorage};
 use cosmwasm_std::{
-    from_binary, from_slice, to_binary, Addr, AllBalanceResponse, Api, BalanceResponse, BankQuery,
+    from_binary, from_slice, to_json_binary, Addr, AllBalanceResponse, Api, BalanceResponse, BankQuery,
     Binary, BlockInfo, ContractInfoResponse, ContractResult, CosmosMsg, CustomQuery, Empty, GovMsg,
     IbcMsg, IbcQuery, Querier, QuerierResult, QuerierWrapper, QueryRequest, Record, Storage,
     SupplyResponse, SystemError, SystemResult, WasmQuery,
@@ -74,7 +74,7 @@ pub struct App<
     Stargate = StargateKeeper<Empty, Empty>,
 > {
     pub router: RefCell<Router<Bank, Custom, Wasm, Staking, Distr, Ibc, Gov, Stargate>>,
-    api: Api,
+    pub api: Api,
     storage: RefCell<Storage>,
     block: RefCell<BlockInfo>,
 }
@@ -212,7 +212,7 @@ pub type BasicAppBuilder<ExecC, QueryC> = AppBuilder<
 
 /// Utility to build App in stages. If particular items wont be set, defaults would be used
 pub struct AppBuilder<Bank, Api, Storage, Custom, Wasm, Staking, Distr, Ibc, Gov, Stargate> {
-    api: Api,
+    pub api: Api,
     block: BlockInfo,
     storage: Storage,
     bank: Bank,
@@ -844,14 +844,25 @@ where
     /// This registers contract code (like uploading wasm bytecode on a chain),
     /// so it can later be used to instantiate a contract.
     pub fn store_code(&self, code: Box<dyn Contract<CustomT::ExecT, CustomT::QueryT>>) -> u64 {
-        self.init_modules(|router, _, _| router.wasm.store_code(code) as u64)
+        self.init_modules(|router, _, _| {
+            router
+                .wasm
+                .store_code(Addr::unchecked("code-creator"), code) as u64
+        })
+    }
+
+    pub fn store_code_with_creator(
+        &self,
+        creator: Addr,
+        code: Box<dyn Contract<CustomT::ExecT, CustomT::QueryT>>,
+    ) -> u64 {
+        self.init_modules(|router, _, _| router.wasm.store_code(creator, code))
     }
 
     /// This allows to get `ContractData` for specific contract
     pub fn contract_data(&self, address: &Addr) -> AnyResult<ContractData> {
-        self.read_module(|router, _, storage| router.wasm.load_contract(storage, address))
+        self.read_module(|router, _, storage| router.wasm.contract_data(storage, address))
     }
-
     /// This gets a raw state dump of all key-values held by a given contract
     pub fn dump_wasm_raw(&self, address: &Addr) -> Vec<Record> {
         self.read_module(|router, _, storage| router.wasm.dump_wasm_raw(storage, address))
@@ -937,7 +948,7 @@ where
         contract_addr: U,
         msg: &T,
     ) -> AnyResult<AppResponse> {
-        let msg = to_binary(msg)?;
+        let msg = to_json_binary(msg)?;
 
         let Self {
             block,
@@ -1180,7 +1191,7 @@ where
                                 .collect::<Vec<_>>(),
                             pagination: None,
                         };
-                        Ok(to_binary(&res)?)
+                        Ok(to_json_binary(&res)?)
                     }
                     QUERY_BALANCE_PATH => {
                         let req: QueryBalanceRequest = data.try_into()?;
@@ -1200,7 +1211,7 @@ where
                             balance: Some(res.amount.into()),
                         };
 
-                        Ok(to_binary(&res)?)
+                        Ok(to_json_binary(&res)?)
                     }
                     QUERY_SUPPLY_PATH => {
                         let req: QuerySupplyOfRequest = data.try_into()?;
@@ -1213,7 +1224,7 @@ where
                             amount: Some(res.amount.into()),
                         };
 
-                        Ok(to_binary(&res)?)
+                        Ok(to_json_binary(&res)?)
                     }
                     // Wasm module queries
                     QUERY_WASM_CONTRACT_SMART_PATH => {
@@ -1227,7 +1238,7 @@ where
                         let res = QuerySmartContractStateResponse {
                             data: bin_res.into(),
                         };
-                        Ok(to_binary(&res)?)
+                        Ok(to_json_binary(&res)?)
                     }
                     QUERY_WASM_CONTRACT_INFO_PATH => {
                         let req: QueryContractInfoRequest = data.try_into()?;
@@ -1249,7 +1260,7 @@ where
                                 extension: None,
                             }),
                         };
-                        Ok(to_binary(&res)?)
+                        Ok(to_json_binary(&res)?)
                     }
                     // The rest of all stargate queries go to the stargate module
                     _ => self.stargate.query(
@@ -1394,7 +1405,7 @@ mod test {
     use super::*;
     use cosmwasm_std::testing::MockQuerier;
     use cosmwasm_std::{
-        coin, coins, to_binary, AllBalanceResponse, Attribute, BankMsg, BankQuery, Coin, Event,
+        coin, coins, to_json_binary, AllBalanceResponse, Attribute, BankMsg, BankQuery, Coin, Event,
         OverflowError, OverflowOperation, Reply, StdError, StdResult, SubMsg, WasmMsg,
     };
 
@@ -1812,7 +1823,7 @@ mod test {
         let msg = payout::SudoMsg { set_count: 49 };
         let sudo_msg = WasmSudo {
             contract_addr: payout_addr.clone(),
-            msg: to_binary(&msg).unwrap(),
+            msg: to_json_binary(&msg).unwrap(),
         };
         app.sudo(sudo_msg.into()).unwrap();
 
@@ -2376,7 +2387,7 @@ mod test {
             SubMsg::reply_always(
                 CosmosMsg::Wasm(WasmMsg::Execute {
                     contract_addr: contract.into(),
-                    msg: to_binary(&echo::Message {
+                    msg: to_json_binary(&echo::Message {
                         data,
                         sub_msg,
                         ..echo::Message::default()
@@ -2396,7 +2407,7 @@ mod test {
             let data = data.into().map(|s| s.to_owned());
             SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
                 contract_addr: contract.into(),
-                msg: to_binary(&echo::Message {
+                msg: to_json_binary(&echo::Message {
                     data,
                     sub_msg,
                     ..echo::Message::default()
@@ -2592,7 +2603,7 @@ mod test {
             let reflect_msg = reflect::Message {
                 messages: vec![SubMsg::new(WasmMsg::Execute {
                     contract_addr: echo_addr.to_string(),
-                    msg: to_binary(&echo_msg).unwrap(),
+                    msg: to_json_binary(&echo_msg).unwrap(),
                     funds: vec![],
                 })],
             };
@@ -2998,7 +3009,7 @@ mod test {
 
             // set up reflect contract
             let code_id = app.store_code(reflect::contract());
-            let init_msg = to_binary(&EmptyMsg {}).unwrap();
+            let init_msg = to_json_binary(&EmptyMsg {}).unwrap();
             let msg = WasmMsg::Instantiate {
                 admin: None,
                 code_id,
@@ -3031,7 +3042,7 @@ mod test {
                 data: Some("food".into()),
                 sub_msg: None,
             };
-            let init_msg = to_binary(&msg).unwrap();
+            let init_msg = to_json_binary(&msg).unwrap();
             let msg = WasmMsg::Instantiate {
                 admin: None,
                 code_id,
@@ -3071,7 +3082,7 @@ mod test {
             let sub_msg = SubMsg::reply_on_success(
                 WasmMsg::Execute {
                     contract_addr: addr1.to_string(),
-                    msg: to_binary(&msg).unwrap(),
+                    msg: to_json_binary(&msg).unwrap(),
                     funds: vec![],
                 },
                 EXECUTE_REPLY_BASE_ID,
@@ -3080,7 +3091,7 @@ mod test {
                 data: Some("Overwrite me".into()),
                 sub_msg: Some(vec![sub_msg]),
             };
-            let init_msg = to_binary(&init_msg).unwrap();
+            let init_msg = to_json_binary(&init_msg).unwrap();
             let msg = WasmMsg::Instantiate {
                 admin: None,
                 code_id,
@@ -3199,7 +3210,7 @@ mod test {
             // execute should error
             let msg = WasmMsg::Execute {
                 contract_addr: error_addr.into(),
-                msg: to_binary(&EmptyMsg {}).unwrap(),
+                msg: to_json_binary(&EmptyMsg {}).unwrap(),
                 funds: vec![],
             };
             let err = app
@@ -3242,9 +3253,9 @@ mod test {
             // caller1 calls caller2, caller2 calls error
             let msg = WasmMsg::Execute {
                 contract_addr: caller_addr2.into(),
-                msg: to_binary(&WasmMsg::Execute {
+                msg: to_json_binary(&WasmMsg::Execute {
                     contract_addr: error_addr.into(),
-                    msg: to_binary(&EmptyMsg {}).unwrap(),
+                    msg: to_json_binary(&EmptyMsg {}).unwrap(),
                     funds: vec![],
                 })
                 .unwrap(),

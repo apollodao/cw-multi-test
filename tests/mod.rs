@@ -1,12 +1,12 @@
 #![cfg(test)]
 
+use apollo_cw_multi_test::error::AnyResult;
+use apollo_cw_multi_test::AddressGenerator;
 use bech32::{decode, encode, FromBase32, ToBase32, Variant};
 use cosmwasm_std::{
     instantiate2_address, Addr, Api, CanonicalAddr, RecoverPubkeyError, StdError, StdResult,
     Storage, VerificationError,
 };
-use cw_multi_test::error::AnyResult;
-use cw_multi_test::AddressGenerator;
 use cw_storage_plus::Item;
 use serde::{Deserialize, Serialize};
 use sha2::digest::Update;
@@ -34,10 +34,10 @@ mod test_contracts {
 
     pub mod counter {
         use super::*;
+        use apollo_cw_multi_test::{Contract, ContractWrapper};
         use cosmwasm_std::{
-            to_binary, Binary, Deps, DepsMut, Empty, Env, MessageInfo, Response, StdError, WasmMsg,
+            to_json_binary, Binary, Deps, DepsMut, Empty, Env, MessageInfo, Response, StdError, WasmMsg,
         };
-        use cw_multi_test::{Contract, ContractWrapper};
 
         fn instantiate(
             deps: DepsMut,
@@ -64,7 +64,7 @@ mod test_contracts {
 
         fn query(deps: Deps, _env: Env, msg: CounterQueryMsg) -> Result<Binary, StdError> {
             match msg {
-                CounterQueryMsg::Counter { .. } => Ok(to_binary(&CounterResponseMsg {
+                CounterQueryMsg::Counter { .. } => Ok(to_json_binary(&CounterResponseMsg {
                     value: COUNTER.may_load(deps.storage).unwrap().unwrap(),
                 })?),
             }

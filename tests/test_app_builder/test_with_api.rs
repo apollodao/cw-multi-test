@@ -1,6 +1,6 @@
 use crate::test_api::MockApiBech32;
+use apollo_cw_multi_test::AppBuilder;
 use cosmwasm_std::{Addr, Api, CanonicalAddr, HexBinary};
-use cw_multi_test::AppBuilder;
 
 #[test]
 fn building_app_with_custom_api_should_work() {
@@ -16,24 +16,24 @@ fn building_app_with_custom_api_should_work() {
 
     // check address validation function
     assert_eq!(
-        app.api().addr_validate(human).unwrap(),
+        app.api.addr_validate(human).unwrap(),
         Addr::unchecked(human)
     );
 
     // check if address can be canonicalized
     assert_eq!(
-        app.api().addr_canonicalize(human).unwrap(),
+        app.api.addr_canonicalize(human).unwrap(),
         CanonicalAddr::from(HexBinary::from_hex(hex).unwrap())
     );
 
     // check if address can be humanized
     assert_eq!(
-        app.api()
-            .addr_humanize(&app.api().addr_canonicalize(human).unwrap())
+        app.api
+            .addr_humanize(&app.api.addr_canonicalize(human).unwrap())
             .unwrap(),
         Addr::unchecked(human)
     );
 
     // check extension function for creating Bech32 encoded addresses
-    assert_eq!(app.api().addr_make("creator"), Addr::unchecked(human));
+    assert_eq!(app.api.addr_make("creator"), Addr::unchecked(human));
 }

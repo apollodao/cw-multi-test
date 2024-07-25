@@ -12,7 +12,7 @@ use crate::{
 };
 use cosmwasm_std::testing::{mock_env, MockQuerier};
 use cosmwasm_std::{
-    coin, coins, from_slice, to_binary, Addr, AllBalanceResponse, Api, Attribute, BankMsg,
+    coin, coins, from_slice, to_json_binary, Addr, AllBalanceResponse, Api, Attribute, BankMsg,
     BankQuery, Binary, BlockInfo, Coin, CosmosMsg, CustomQuery, Empty, Event, OverflowError,
     OverflowOperation, Querier, Reply, StdError, StdResult, Storage, SubMsg, WasmMsg,
 };
@@ -564,7 +564,7 @@ fn sudo_works() {
     let msg = payout::SudoMsg { set_count: 49 };
     let sudo_msg = WasmSudo {
         contract_addr: payout_addr.clone(),
-        msg: to_binary(&msg).unwrap(),
+        msg: to_json_binary(&msg).unwrap(),
     };
     app.sudo(sudo_msg.into()).unwrap();
 
@@ -999,7 +999,7 @@ mod reply_data_overwrite {
         SubMsg::reply_always(
             CosmosMsg::Wasm(WasmMsg::Execute {
                 contract_addr: contract.into(),
-                msg: to_binary(&echo::Message {
+                msg: to_json_binary(&echo::Message {
                     data,
                     sub_msg,
                     ..echo::Message::default()
@@ -1019,7 +1019,7 @@ mod reply_data_overwrite {
         let data = data.into().map(|s| s.to_owned());
         SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
             contract_addr: contract.into(),
-            msg: to_binary(&echo::Message {
+            msg: to_json_binary(&echo::Message {
                 data,
                 sub_msg,
                 ..echo::Message::default()
@@ -1215,7 +1215,7 @@ mod reply_data_overwrite {
         let reflect_msg = reflect::Message {
             messages: vec![SubMsg::new(WasmMsg::Execute {
                 contract_addr: echo_addr.to_string(),
-                msg: to_binary(&echo_msg).unwrap(),
+                msg: to_json_binary(&echo_msg).unwrap(),
                 funds: vec![],
             })],
         };
@@ -1566,7 +1566,7 @@ mod contract_instantiation {
         let code_id = app.store_code_with_creator(Addr::unchecked("creator"), echo::contract());
 
         // initialize the contract
-        let init_msg = to_binary(&Empty {}).unwrap();
+        let init_msg = to_json_binary(&Empty {}).unwrap();
         let msg = WasmMsg::Instantiate2 {
             admin: None,
             code_id,
@@ -1680,7 +1680,7 @@ mod protobuf_wrapped_data {
         // set up reflect contract
         let code_id = app.store_code(reflect::contract());
 
-        let init_msg = to_binary(&Empty {}).unwrap();
+        let init_msg = to_json_binary(&Empty {}).unwrap();
         let msg = WasmMsg::Instantiate {
             admin: None,
             code_id,
@@ -1714,7 +1714,7 @@ mod protobuf_wrapped_data {
             data: Some("food".into()),
             sub_msg: None,
         };
-        let init_msg = to_binary(&msg).unwrap();
+        let init_msg = to_json_binary(&msg).unwrap();
         let msg = WasmMsg::Instantiate {
             admin: None,
             code_id,
@@ -1755,7 +1755,7 @@ mod protobuf_wrapped_data {
         let sub_msg = SubMsg::reply_on_success(
             WasmMsg::Execute {
                 contract_addr: addr1.to_string(),
-                msg: to_binary(&msg).unwrap(),
+                msg: to_json_binary(&msg).unwrap(),
                 funds: vec![],
             },
             EXECUTE_REPLY_BASE_ID,
@@ -1764,7 +1764,7 @@ mod protobuf_wrapped_data {
             data: Some("Overwrite me".into()),
             sub_msg: Some(vec![sub_msg]),
         };
-        let init_msg = to_binary(&init_msg).unwrap();
+        let init_msg = to_json_binary(&init_msg).unwrap();
         let msg = WasmMsg::Instantiate {
             admin: None,
             code_id,
@@ -1886,7 +1886,7 @@ mod errors {
         // execute should error
         let msg = WasmMsg::Execute {
             contract_addr: error_addr.into(),
-            msg: to_binary(&Empty {}).unwrap(),
+            msg: to_json_binary(&Empty {}).unwrap(),
             funds: vec![],
         };
         let err = app
@@ -1929,9 +1929,9 @@ mod errors {
         // caller1 calls caller2, caller2 calls error
         let msg = WasmMsg::Execute {
             contract_addr: caller_addr2.into(),
-            msg: to_binary(&WasmMsg::Execute {
+            msg: to_json_binary(&WasmMsg::Execute {
                 contract_addr: error_addr.into(),
-                msg: to_binary(&Empty {}).unwrap(),
+                msg: to_json_binary(&Empty {}).unwrap(),
                 funds: vec![],
             })
             .unwrap(),

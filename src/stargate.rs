@@ -150,7 +150,7 @@ mod tests {
     use std::str::FromStr;
 
     use anyhow::Ok;
-    use cosmwasm_std::{coin, from_binary, to_binary, Coin, CosmosMsg, Event, QueryRequest};
+    use cosmwasm_std::{coin, from_binary, to_json_binary, Coin, CosmosMsg, Event, QueryRequest};
     use osmosis_std::types::cosmos::bank::v1beta1::{
         QueryAllBalancesRequest, QueryBalanceRequest, QuerySupplyOfRequest,
     };
@@ -196,7 +196,7 @@ mod tests {
             msg: StargateMsg,
         ) -> anyhow::Result<Binary> {
             let num: u64 = from_binary(&msg.value)?;
-            let bin = to_binary(&format!("bar{:?}", num)).unwrap();
+            let bin = to_json_binary(&format!("bar{:?}", num)).unwrap();
             Ok(bin)
         }
 
@@ -259,7 +259,7 @@ mod tests {
                 Addr::unchecked("unchecked"),
                 CosmosMsg::Stargate {
                     type_url: "foo".to_string(),
-                    value: to_binary(&1337u64).unwrap(),
+                    value: to_json_binary(&1337u64).unwrap(),
                 },
             )
             .unwrap();
@@ -281,7 +281,7 @@ mod tests {
         let res: String = querier
             .query(&QueryRequest::Stargate {
                 path: "foo".to_string(),
-                data: to_binary(&1337u64).unwrap(),
+                data: to_json_binary(&1337u64).unwrap(),
             })
             .unwrap();
 
@@ -303,7 +303,7 @@ mod tests {
                 Addr::unchecked("unchecked"),
                 CosmosMsg::Stargate {
                     type_url: "bar".to_string(),
-                    value: to_binary(&1337u64).unwrap(),
+                    value: to_json_binary(&1337u64).unwrap(),
                 },
             )
             .unwrap();

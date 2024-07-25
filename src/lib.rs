@@ -9,6 +9,7 @@
 mod addresses;
 mod app;
 mod bank;
+mod checksums;
 #[allow(clippy::type_complexity)]
 mod contracts;
 pub mod custom_handler;
@@ -25,6 +26,7 @@ mod token_factory;
 mod transactions;
 mod wasm;
 
+pub use crate::addresses::{AddressGenerator, SimpleAddressGenerator};
 pub use crate::app::{
     custom_app, next_block, App, AppBuilder, BasicApp, BasicAppBuilder, CosmosRouter, Router,
     SudoMsg,
@@ -35,7 +37,7 @@ pub use crate::executor::{AppResponse, Executor};
 pub use crate::ibc::Ibc;
 pub use crate::module::{FailingModule, Module};
 pub use crate::staking::{DistributionKeeper, StakeKeeper, Staking, StakingInfo, StakingSudo};
-pub use crate::wasm::{AddressGenerator, Wasm, WasmKeeper, WasmSudo};
+pub use crate::wasm::{ContractData, Wasm, WasmKeeper, WasmSudo};
 pub use stargate::*;
 
 pub const QUERY_ALL_BALANCES_PATH: &str = "/cosmos.bank.v1beta1.Query/AllBalances";
@@ -45,4 +47,3 @@ pub const QUERY_WASM_CONTRACT_SMART_PATH: &str = "/cosmwasm.wasm.v1.Query/SmartC
 pub const QUERY_WASM_CONTRACT_RAW_PATH: &str = "/cosmwasm.wasm.v1.Query/RawContractState";
 pub const QUERY_WASM_CONTRACT_INFO_PATH: &str = "/cosmwasm.wasm.v1.Query/ContractInfo";
 pub const QUERY_WASM_CODE_INFO_PATH: &str = "/cosmwasm.wasm.v1.Query/CodeInfo";
-

@@ -1,3 +1,4 @@
+pub use anyhow::{anyhow, bail, Context as AnyContext, Error as AnyError, Result as AnyResult};
 use cosmwasm_std::{WasmMsg, WasmQuery};
 use thiserror::Error;
 
@@ -9,7 +10,7 @@ pub enum Error {
     #[error("Empty attribute value. Key: {key}")]
     EmptyAttributeValue { key: String },
 
-    #[error("Attribute key strats with reserved prefix _: {0}")]
+    #[error("Attribute key starts with reserved prefix _: {0}")]
     ReservedAttributeKey(String),
 
     #[error("Event type too short: {0}")]

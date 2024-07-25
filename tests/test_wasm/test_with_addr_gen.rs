@@ -1,8 +1,8 @@
 use crate::test_addresses::MockAddressGenerator;
 use crate::test_api::MockApiBech32;
 use crate::test_contracts;
+use apollo_cw_multi_test::{AppBuilder, Executor, WasmKeeper};
 use cosmwasm_std::{Addr, Empty};
-use cw_multi_test::{AppBuilder, Executor, WasmKeeper};
 
 #[test]
 fn contract_address_should_work() {
@@ -22,7 +22,7 @@ fn contract_address_should_work() {
         test_contracts::counter::contract(),
     );
 
-    let owner = app.api().addr_make("owner");
+    let owner = app.api.addr_make("owner");
 
     let contract_addr_1 = app
         .instantiate_contract(code_id, owner.clone(), &Empty {}, &[], "Counter", None)

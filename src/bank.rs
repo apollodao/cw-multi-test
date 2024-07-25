@@ -4,7 +4,7 @@ use itertools::Itertools;
 use schemars::JsonSchema;
 
 use cosmwasm_std::{
-    coin, to_binary, Addr, AllBalanceResponse, Api, BalanceResponse, BankMsg, BankQuery, Binary,
+    coin, to_json_binary, Addr, AllBalanceResponse, Api, BalanceResponse, BankMsg, BankQuery, Binary,
     BlockInfo, Coin, Event, Order, Querier, StdResult, Storage, SupplyResponse, Uint128,
 };
 use cw_storage_plus::Map;
@@ -206,7 +206,7 @@ impl Module for BankKeeper {
                 let address = api.addr_validate(&address)?;
                 let amount = self.get_balance(&bank_storage, &address)?;
                 let res = AllBalanceResponse { amount };
-                Ok(to_binary(&res)?)
+                Ok(to_json_binary(&res)?)
             }
             BankQuery::Balance { address, denom } => {
                 let address = api.addr_validate(&address)?;
@@ -216,13 +216,13 @@ impl Module for BankKeeper {
                     .find(|c| c.denom == denom)
                     .unwrap_or_else(|| coin(0, denom));
                 let res = BalanceResponse { amount };
-                Ok(to_binary(&res)?)
+                Ok(to_json_binary(&res)?)
             }
             BankQuery::Supply { denom } => {
                 let supply = self.get_supply(&bank_storage, &denom)?;
                 let mut res = SupplyResponse::default();
                 res.amount = Coin::new(supply.u128(), denom);
-                Ok(to_binary(&res)?)
+                Ok(to_json_binary(&res)?)
             }
             q => bail!("Unsupported bank query: {:?}", q),
         }
