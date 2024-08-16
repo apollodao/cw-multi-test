@@ -29,6 +29,7 @@ schemars = "0.8.1"
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 prost = "0.9"
 anyhow = "1.0.41"
+sha2 = "0.10.8"
 thiserror = "1.0"
 derivative = "2"
 
@@ -47,3 +48,4 @@ regex       = "1.7.3"
 # Once we bump `cosmwasm-*` deps to a version after `1.1.5`, we can remove these.
 serde_json = "1.0.40"
 test-case  = "3.0.0"
+bech32 = "0.9.1"

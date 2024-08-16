@@ -1,3 +1,4 @@
+pub use anyhow::{anyhow, bail, Context as AnyContext, Error as AnyError, Result as AnyResult};
 use cosmwasm_std::{WasmMsg, WasmQuery};
 use thiserror::Error;
 
@@ -9,7 +10,7 @@ pub enum Error {
     #[error("Empty attribute value. Key: {key}")]
     EmptyAttributeValue { key: String },
 
-    #[error("Attribute key strats with reserved prefix _: {0}")]
+    #[error("Attribute key starts with reserved prefix _: {0}")]
     ReservedAttributeKey(String),
 
     #[error("Event type too short: {0}")]
@@ -21,8 +22,14 @@ pub enum Error {
     #[error("Unsupported wasm message: {0:?}")]
     UnsupportedWasmMsg(WasmMsg),
 
-    #[error("Unregistered code id: {0}")]
-    UnregisteredCodeId(usize),
+    #[error("code id: invalid")]
+    InvalidCodeId,
+
+    #[error("code id {0}: no such code")]
+    UnregisteredCodeId(u64),
+
+    #[error("Contract with this address already exists: {0}")]
+    DuplicatedContractAddress(String),
 }
 
 impl Error {
@@ -42,5 +49,9 @@ impl Error {
 
     pub fn event_type_too_short(ty: impl Into<String>) -> Self {
         Self::EventTypeTooShort(ty.into())
+    }
+
+    pub fn duplicated_contract_address(address: impl Into<String>) -> Self {
+        Self::DuplicatedContractAddress(address.into())
     }
 }
